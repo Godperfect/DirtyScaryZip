@@ -1,38 +1,66 @@
-const express = require('express');
-const ytdl = require('ytdl-core');
-const cors = require('cors');
+const express = require("express");
+const cors = require("cors");
+const axios = require("axios");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Enable CORS for all requests
+// Replace this with your YouTube Data API key
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || "AIzaSyClkCIjpL3vAg0VZj2jDhzIIsgmXc1SQUM";
+
+// Middleware
 app.use(cors());
 
-// API endpoint for downloading videos
-app.get('/video', async (req, res) => {
-    const videoUrl = req.query.url;
+// Home route
+app.get("/", (req, res) => {
+  res.json({
+    message: "Welcome to the YouTube Video Downloader API",
+    usage: "Use /video?url=YOUTUBE_VIDEO_URL to fetch video info",
+  });
+});
 
-    if (!videoUrl) {
-        return res.status(400).json({ error: 'URL parameter is required' });
+// Fetch video information and provide a link
+app.get("/video", async (req, res) => {
+  const videoUrl = req.query.url;
+
+  if (!videoUrl) {
+    return res.status(400).json({ error: "URL parameter is required" });
+  }
+
+  // Extract video ID from URL
+  const videoId = videoUrl.split("v=")[1]?.split("&")[0] || videoUrl.split("shorts/")[1];
+
+  if (!videoId) {
+    return res.status(400).json({ error: "Invalid YouTube URL provided." });
+  }
+
+  try {
+    // Fetch video details from YouTube API
+    const videoDetailsUrl = `https://www.googleapis.com/youtube/v3/videos?id=${videoId}&key=${YOUTUBE_API_KEY}&part=snippet,contentDetails`;
+
+    const response = await axios.get(videoDetailsUrl);
+    const videoData = response.data;
+
+    if (!videoData.items || videoData.items.length === 0) {
+      return res.status(404).json({ error: "Video not found." });
     }
 
-    try {
-        const videoInfo = await ytdl.getInfo(videoUrl); // Get video info
-        const title = videoInfo.videoDetails.title.replace(/[^a-zA-Z0-9 ]/g, ''); // Sanitize title
+    const videoTitle = videoData.items[0].snippet.title;
+    const sanitizedTitle = videoTitle.replace(/[^a-zA-Z0-9 ]/g, "");
+    const downloadUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-        // Set headers to initiate download
-        res.header('Content-Disposition', `attachment; filename="${title}.mp4"`);
-        res.header('Content-Type', 'video/mp4');
-
-        // Pipe video to response
-        ytdl(videoUrl, { format: 'mp4' }).pipe(res);
-    } catch (error) {
-        console.error('Error:', error);
-        res.status(500).json({ error: 'Failed to download the video. Check the URL.' });
-    }
+    res.json({
+      success: true,
+      title: sanitizedTitle,
+      downloadUrl,
+    });
+  } catch (error) {
+    console.error("Error fetching video details:", error.message);
+    res.status(500).json({ error: "Failed to fetch video details." });
+  }
 });
 
 // Start server
 app.listen(PORT, () => {
-    console.log(`Server running at http://localhost:${PORT}`);
+  console.log(`Server running at http://localhost:${PORT}`);
 });
